@@ -248,9 +248,18 @@ with st.sidebar:
     max_entities = st.slider(
         "Max entities in distribution chart",
         min_value=10,
-        max_value=80,
-        value=40,
-        step=5,
+    max_value=80,
+    value=40,
+    step=5,
+)
+
+    axis_scale_choices = ["Linear", "Log"]
+    default_scale_index = 1 if metric_choice == "P/E" else 0
+    axis_scale = st.radio(
+        "Distribution Scale",
+        axis_scale_choices,
+        index=default_scale_index,
+        horizontal=True,
     )
 
 # ---------------------------------------------------------------------------
@@ -321,6 +330,10 @@ if dist_df.empty:
     st.info("No aggregates available for the selected view.")
     st.stop()
 
+if axis_scale == "Log" and (dist_df[metric_column] <= 0).any():
+    st.info("Log scale unavailable because the selected data contains zero or negative values. Using linear scale instead.")
+    axis_scale = "Linear"
+
 latest_idx = dist_df.groupby("TICKER")["TRADE_DATE"].idxmax()
 latest_snapshot = dist_df.loc[latest_idx, ["TICKER", metric_column]].dropna(subset=[metric_column])
 ordered = latest_snapshot.sort_values(metric_column, ascending=False)["TICKER"].tolist()
@@ -343,6 +356,17 @@ if len(global_series) >= 30:
     if np.isfinite(lower_candidate) and np.isfinite(upper_candidate) and lower_candidate < upper_candidate:
         trim_lower = float(lower_candidate)
         trim_upper = float(upper_candidate)
+
+if axis_scale == "Log" and trim_lower is not None:
+    positive_series = global_series[global_series > 0]
+    if positive_series.empty:
+        axis_scale = "Linear"
+    else:
+        min_positive = float(positive_series.min())
+        if min_positive <= 0:
+            min_positive = float(positive_series[positive_series > 0].min())
+        if trim_lower <= 0 or trim_lower < min_positive:
+            trim_lower = min_positive
 
 
 def trim_series(series: pd.Series) -> pd.Series:
@@ -419,6 +443,13 @@ for ticker in ordered:
 
     valid_tickers.append(ticker)
 
+axis_config = dict(fixedrange=True)
+if axis_scale == "Log":
+    axis_config["type"] = "log"
+else:
+    if trim_lower is not None and trim_upper is not None:
+        axis_config["range"] = [trim_lower, trim_upper]
+
 fig_distribution.update_layout(
     title=f"{metric_choice} distribution for {focus_label}",
     xaxis_title="Ticker / Aggregate",
@@ -431,10 +462,7 @@ fig_distribution.update_layout(
         rangeslider=dict(visible=False),
         fixedrange=True,
     ),
-    yaxis=dict(
-        fixedrange=True,
-        range=[trim_lower, trim_upper] if trim_lower is not None and trim_upper is not None else None,
-    ),
+    yaxis=axis_config,
     dragmode=False,
 )
 
