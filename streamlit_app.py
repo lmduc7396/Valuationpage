@@ -248,18 +248,9 @@ with st.sidebar:
     max_entities = st.slider(
         "Max entities in distribution chart",
         min_value=10,
-    max_value=80,
-    value=40,
-    step=5,
-)
-
-    axis_scale_choices = ["Linear", "Log"]
-    default_scale_index = 1 if metric_choice == "P/E" else 0
-    axis_scale = st.radio(
-        "Distribution Scale",
-        axis_scale_choices,
-        index=default_scale_index,
-        horizontal=True,
+        max_value=80,
+        value=40,
+        step=5,
     )
 
 # ---------------------------------------------------------------------------
@@ -330,10 +321,6 @@ if dist_df.empty:
     st.info("No aggregates available for the selected view.")
     st.stop()
 
-if axis_scale == "Log" and (dist_df[metric_column] <= 0).any():
-    st.info("Log scale unavailable because the selected data contains zero or negative values. Using linear scale instead.")
-    axis_scale = "Linear"
-
 latest_idx = dist_df.groupby("TICKER")["TRADE_DATE"].idxmax()
 latest_snapshot = dist_df.loc[latest_idx, ["TICKER", metric_column]].dropna(subset=[metric_column])
 ordered = latest_snapshot.sort_values(metric_column, ascending=False)["TICKER"].tolist()
@@ -347,43 +334,6 @@ st.subheader("Valuation Distribution")
 fig_distribution = go.Figure()
 valid_tickers: list[str] = []
 
-global_series = dist_df[metric_column].dropna()
-trim_lower: float | None = None
-trim_upper: float | None = None
-if len(global_series) >= 30:
-    lower_candidate = global_series.quantile(0.02)
-    upper_candidate = global_series.quantile(0.98)
-    if np.isfinite(lower_candidate) and np.isfinite(upper_candidate) and lower_candidate < upper_candidate:
-        trim_lower = float(lower_candidate)
-        trim_upper = float(upper_candidate)
-
-if axis_scale == "Log" and trim_lower is not None:
-    positive_series = global_series[global_series > 0]
-    if positive_series.empty:
-        axis_scale = "Linear"
-    else:
-        min_positive = float(positive_series.min())
-        if min_positive <= 0:
-            min_positive = float(positive_series[positive_series > 0].min())
-        if trim_lower <= 0 or trim_lower < min_positive:
-            trim_lower = min_positive
-
-
-def trim_series(series: pd.Series) -> pd.Series:
-    if trim_lower is None or trim_upper is None:
-        return series
-    filtered = series[(series >= trim_lower) & (series <= trim_upper)]
-    return filtered if not filtered.empty else series
-
-
-def clamp_value(value: float | None) -> float | None:
-    if value is None or (isinstance(value, float) and np.isnan(value)):
-        return value
-    if trim_lower is None or trim_upper is None:
-        return value
-    return float(np.clip(value, trim_lower, trim_upper))
-
-
 for ticker in ordered:
     ticker_series = dist_df.loc[dist_df["TICKER"] == ticker, metric_column].dropna()
     if len(ticker_series) < 15:
@@ -393,27 +343,22 @@ for ticker in ordered:
     if len(clean_series) < 10:
         clean_series = ticker_series
 
-    trimmed_series = trim_series(clean_series)
-    if len(trimmed_series) < 10:
-        trimmed_series = clean_series
-
-    p5 = trimmed_series.quantile(0.05)
-    p25 = trimmed_series.quantile(0.25)
-    p50 = trimmed_series.quantile(0.50)
-    p75 = trimmed_series.quantile(0.75)
-    p95 = trimmed_series.quantile(0.95)
+    p5 = clean_series.quantile(0.05)
+    p25 = clean_series.quantile(0.25)
+    p50 = clean_series.quantile(0.50)
+    p75 = clean_series.quantile(0.75)
+    p95 = clean_series.quantile(0.95)
 
     current_value = ticker_series.iloc[-1]
     percentile = (clean_series <= current_value).mean() * 100 if len(clean_series) else None
-    display_current = clamp_value(current_value)
 
     fig_distribution.add_trace(
         go.Candlestick(
             x=[ticker],
-            open=[round(clamp_value(p25), 2) if p25 is not None else None],
-            high=[round(clamp_value(p95), 2) if p95 is not None else None],
-            low=[round(clamp_value(p5), 2) if p5 is not None else None],
-            close=[round(clamp_value(p75), 2) if p75 is not None else None],
+            open=[round(p25, 2) if p25 is not None else None],
+            high=[round(p95, 2) if p95 is not None else None],
+            low=[round(p5, 2) if p5 is not None else None],
+            close=[round(p75, 2) if p75 is not None else None],
             name=ticker,
             showlegend=False,
             increasing_line_color="#D3D3D3",
@@ -425,7 +370,7 @@ for ticker in ordered:
     fig_distribution.add_trace(
         go.Scatter(
             x=[ticker],
-            y=[display_current],
+            y=[current_value],
             mode="markers",
             marker=dict(
                 size=9,
@@ -443,13 +388,6 @@ for ticker in ordered:
 
     valid_tickers.append(ticker)
 
-axis_config = dict(fixedrange=True)
-if axis_scale == "Log":
-    axis_config["type"] = "log"
-else:
-    if trim_lower is not None and trim_upper is not None:
-        axis_config["range"] = [trim_lower, trim_upper]
-
 fig_distribution.update_layout(
     title=f"{metric_choice} distribution for {focus_label}",
     xaxis_title="Ticker / Aggregate",
@@ -462,16 +400,11 @@ fig_distribution.update_layout(
         rangeslider=dict(visible=False),
         fixedrange=True,
     ),
-    yaxis=axis_config,
+    yaxis=dict(fixedrange=True),
     dragmode=False,
 )
 
 st.plotly_chart(fig_distribution, use_container_width=True, config={"displayModeBar": False})
-
-if trim_lower is not None and trim_upper is not None:
-    st.caption(
-        "Distribution chart trimmed to the 2nd–98th percentile range to reduce the impact of extreme outliers."
-    )
 
 # ---------------------------------------------------------------------------
 # Drilldown charts
