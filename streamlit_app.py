@@ -161,11 +161,41 @@ def prepare_summary_table(
     if table.empty:
         return table
 
-    table = table.sort_values(
-        by=["IsAggregate", "Group", "Current"],
-        ascending=[False, True, False],
-        na_position="last",
-    ).reset_index(drop=True)
+    # Determine ordering: aggregates per group first (sorted by current), followed by member tickers
+    aggregates = table[table["IsAggregate"]].copy()
+    if not aggregates.empty:
+        aggregates["SortValue"] = aggregates["Current"].fillna(-np.inf)
+        ordered_groups = aggregates.sort_values("SortValue", ascending=False)["Group"].tolist()
+    else:
+        ordered_groups = []
+
+    # Append any groups without aggregates to maintain coverage
+    for group in sorted(table["Group"].unique()):
+        if group not in ordered_groups:
+            ordered_groups.append(group)
+
+    ordered_rows: list[pd.DataFrame] = []
+    for group in ordered_groups:
+        group_slice = table[table["Group"] == group]
+        if group_slice.empty:
+            continue
+
+        agg_row = group_slice[group_slice["IsAggregate"]]
+        if not agg_row.empty:
+            ordered_rows.append(agg_row)
+
+        member_rows = (
+            group_slice[~group_slice["IsAggregate"]]
+            .sort_values("Current", ascending=False, na_position="last")
+        )
+        if not member_rows.empty:
+            ordered_rows.append(member_rows)
+
+    if ordered_rows:
+        table = pd.concat(ordered_rows, ignore_index=True)
+    else:
+        table = table.sort_values("Current", ascending=False, na_position="last").reset_index(drop=True)
+
     return table
 
 
@@ -637,6 +667,8 @@ else:
                     height=26,
                     font=dict(size=13),
                 ),
+                sort_action="native",
+                sort_mode="multi",
             )
         ]
     )
