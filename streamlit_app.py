@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from datetime import timedelta
+from pathlib import Path
 
 from utilities.sidebar_style import apply_sidebar_style
 from utilities.style_utils import apply_google_font
@@ -35,6 +36,8 @@ apply_sidebar_style()
 
 VALUATION_COLUMNS = ["PE", "PB", "PS", "EV_EBITDA"]
 DEFAULT_LOOKBACK_YEARS = 5
+TOP_TICKER_COUNT = 100
+TOP_TICKER_FILE = Path("Data/top_tickers.parquet")
 
 
 @st.cache_data(ttl=1800)
@@ -47,6 +50,38 @@ def load_market_data(years: int = DEFAULT_LOOKBACK_YEARS) -> pd.DataFrame:
 
     df = df.sort_values(["TICKER", "TRADE_DATE"]).reset_index(drop=True)
     return df
+
+
+def ensure_top_ticker_cache(df: pd.DataFrame, count: int = TOP_TICKER_COUNT) -> set[str]:
+    """Return cached set of top tickers by market cap, refreshing as needed."""
+
+    if TOP_TICKER_FILE.exists():
+        try:
+            cached = pd.read_parquet(TOP_TICKER_FILE)
+            if "TICKER" in cached.columns:
+                return set(cached["TICKER"].astype(str).tolist())
+        except Exception:
+            pass
+
+    if "MKT_CAP" not in df.columns or df["MKT_CAP"].notna().sum() == 0:
+        return set(df["TICKER"].astype(str).unique().tolist())
+
+    latest_caps = (
+        df[["TICKER", "TRADE_DATE", "MKT_CAP"]]
+        .dropna(subset=["MKT_CAP"])
+        .sort_values(["TICKER", "TRADE_DATE"])
+        .groupby("TICKER")
+        .tail(1)
+        .set_index("TICKER")["MKT_CAP"]
+        .sort_values(ascending=False)
+    )
+
+    top_series = latest_caps.head(count)
+    top_df = top_series.reset_index()
+    top_df.columns = ["TICKER", "MKT_CAP"]
+    TOP_TICKER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    top_df.to_parquet(TOP_TICKER_FILE, index=False)
+    return set(top_series.index.astype(str))
 
 
 def build_group_aggregates(
@@ -149,18 +184,17 @@ if market_df.empty:
     st.error("Valuation data not available. Please refresh the data pipeline.")
     st.stop()
 
-classification_options: dict[str, str] = {}
-if "Sector" in market_df.columns:
-    classification_options["Sector"] = "Sector"
-if "Industry_L1" in market_df.columns:
-    classification_options["Industry (Level 1)"] = "Industry_L1"
-if "Industry_L2" in market_df.columns:
-    classification_options["Industry (Level 2)"] = "Industry_L2"
-if "Industry_L3" in market_df.columns:
-    classification_options["Industry (Level 3)"] = "Industry_L3"
+top_ticker_universe = ensure_top_ticker_cache(market_df)
 
-if not classification_options:
-    classification_options = {"Sector": "Sector"}
+if "Industry_L2" in market_df.columns:
+    grouping_column = "Industry_L2"
+    grouping_label = "Industry (Level 2)"
+elif "Sector" in market_df.columns:
+    grouping_column = "Sector"
+    grouping_label = "Sector"
+else:
+    grouping_column = "Sector"
+    grouping_label = "Sector"
 
 with st.sidebar:
     st.markdown("### Settings")
@@ -171,12 +205,6 @@ with st.sidebar:
     )
     metric_column = get_metric_column(metric_choice)
 
-    grouping_label = st.selectbox(
-        "Grouping Level",
-        list(classification_options.keys()),
-    )
-    grouping_column = classification_options[grouping_label]
-
     available_groups = ["All Market"] + sorted(
         g for g in market_df[grouping_column].dropna().unique().tolist() if g
     )
@@ -184,6 +212,7 @@ with st.sidebar:
         f"Focus {grouping_label}",
         available_groups,
     )
+    st.caption(f"Grouping fixed at {grouping_label} for performance.")
 
     only_vn30 = st.checkbox("Only VN30 constituents", value=False)
     max_entities = st.slider(
@@ -212,6 +241,8 @@ filtered_df["GroupValue"] = filtered_df[grouping_column]
 focus_label = "All Market" if selected_group == "All Market" else selected_group
 if selected_group != "All Market":
     filtered_df = filtered_df[filtered_df[grouping_column] == selected_group]
+else:
+    filtered_df = filtered_df[filtered_df["TICKER"].isin(top_ticker_universe)]
 
 if filtered_df.empty:
     st.warning("No tickers available for the selected grouping.")
@@ -542,21 +573,16 @@ with col_hist:
 
 st.markdown("---")
 st.subheader("Valuation Summary Table")
-latest_caps = (
-    filtered_df.dropna(subset=["MKT_CAP"])
-    .sort_values(["TICKER", "TRADE_DATE"])
-    .groupby("TICKER")["MKT_CAP"]
-    .last()
-    .sort_values(ascending=False)
-)
+current_top_set = top_ticker_universe if selected_group == "All Market" else None
 
-top_ticker_set = set(latest_caps.head(100).index) if not latest_caps.empty else set(filtered_df["TICKER"].unique())
+if selected_group == "All Market":
+    st.caption(f"Summary limited to top {TOP_TICKER_COUNT} tickers by market cap for performance.")
 
 summary_df = prepare_summary_table(
     focus_df,
     metric_col=metric_column,
     group_col=grouping_column,
-    top_ticker_set=top_ticker_set,
+    top_ticker_set=current_top_set,
 )
 
 if summary_df.empty:
