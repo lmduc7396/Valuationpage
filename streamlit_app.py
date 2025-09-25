@@ -334,6 +334,32 @@ st.subheader("Valuation Distribution")
 fig_distribution = go.Figure()
 valid_tickers: list[str] = []
 
+global_series = dist_df[metric_column].dropna()
+trim_lower: float | None = None
+trim_upper: float | None = None
+if len(global_series) >= 30:
+    lower_candidate = global_series.quantile(0.02)
+    upper_candidate = global_series.quantile(0.98)
+    if np.isfinite(lower_candidate) and np.isfinite(upper_candidate) and lower_candidate < upper_candidate:
+        trim_lower = float(lower_candidate)
+        trim_upper = float(upper_candidate)
+
+
+def trim_series(series: pd.Series) -> pd.Series:
+    if trim_lower is None or trim_upper is None:
+        return series
+    filtered = series[(series >= trim_lower) & (series <= trim_upper)]
+    return filtered if not filtered.empty else series
+
+
+def clamp_value(value: float | None) -> float | None:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return value
+    if trim_lower is None or trim_upper is None:
+        return value
+    return float(np.clip(value, trim_lower, trim_upper))
+
+
 for ticker in ordered:
     ticker_series = dist_df.loc[dist_df["TICKER"] == ticker, metric_column].dropna()
     if len(ticker_series) < 15:
@@ -343,22 +369,27 @@ for ticker in ordered:
     if len(clean_series) < 10:
         clean_series = ticker_series
 
-    p5 = clean_series.quantile(0.05)
-    p25 = clean_series.quantile(0.25)
-    p50 = clean_series.quantile(0.50)
-    p75 = clean_series.quantile(0.75)
-    p95 = clean_series.quantile(0.95)
+    trimmed_series = trim_series(clean_series)
+    if len(trimmed_series) < 10:
+        trimmed_series = clean_series
+
+    p5 = trimmed_series.quantile(0.05)
+    p25 = trimmed_series.quantile(0.25)
+    p50 = trimmed_series.quantile(0.50)
+    p75 = trimmed_series.quantile(0.75)
+    p95 = trimmed_series.quantile(0.95)
 
     current_value = ticker_series.iloc[-1]
     percentile = (clean_series <= current_value).mean() * 100 if len(clean_series) else None
+    display_current = clamp_value(current_value)
 
     fig_distribution.add_trace(
         go.Candlestick(
             x=[ticker],
-            open=[round(p25, 2)],
-            high=[round(p95, 2)],
-            low=[round(p5, 2)],
-            close=[round(p75, 2)],
+            open=[round(clamp_value(p25), 2) if p25 is not None else None],
+            high=[round(clamp_value(p95), 2) if p95 is not None else None],
+            low=[round(clamp_value(p5), 2) if p5 is not None else None],
+            close=[round(clamp_value(p75), 2) if p75 is not None else None],
             name=ticker,
             showlegend=False,
             increasing_line_color="#D3D3D3",
@@ -370,7 +401,7 @@ for ticker in ordered:
     fig_distribution.add_trace(
         go.Scatter(
             x=[ticker],
-            y=[current_value],
+            y=[display_current],
             mode="markers",
             marker=dict(
                 size=9,
@@ -400,11 +431,19 @@ fig_distribution.update_layout(
         rangeslider=dict(visible=False),
         fixedrange=True,
     ),
-    yaxis=dict(fixedrange=True),
+    yaxis=dict(
+        fixedrange=True,
+        range=[trim_lower, trim_upper] if trim_lower is not None and trim_upper is not None else None,
+    ),
     dragmode=False,
 )
 
 st.plotly_chart(fig_distribution, use_container_width=True, config={"displayModeBar": False})
+
+if trim_lower is not None and trim_upper is not None:
+    st.caption(
+        "Distribution chart trimmed to the 2nd–98th percentile range to reduce the impact of extreme outliers."
+    )
 
 # ---------------------------------------------------------------------------
 # Drilldown charts
