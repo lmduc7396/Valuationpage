@@ -253,6 +253,13 @@ with st.sidebar:
         step=5,
     )
 
+    axis_scale = st.radio(
+        "Distribution Scale",
+        ("Linear", "Log"),
+        index=0,
+        horizontal=True,
+    )
+
 # ---------------------------------------------------------------------------
 # Data filtering & derived dataset
 # ---------------------------------------------------------------------------
@@ -321,6 +328,11 @@ if dist_df.empty:
     st.info("No aggregates available for the selected view.")
     st.stop()
 
+log_allowed = axis_scale == "Log" and (dist_df[metric_column] > 0).any()
+if axis_scale == "Log" and not log_allowed:
+    st.info("Log scale unavailable because the selection includes zero or negative values. Using linear scale.")
+    axis_scale = "Linear"
+
 latest_idx = dist_df.groupby("TICKER")["TRADE_DATE"].idxmax()
 latest_snapshot = dist_df.loc[latest_idx, ["TICKER", metric_column]].dropna(subset=[metric_column])
 ordered = latest_snapshot.sort_values(metric_column, ascending=False)["TICKER"].tolist()
@@ -342,6 +354,13 @@ for ticker in ordered:
     clean_series = remove_outliers_iqr(ticker_series, multiplier=2.5)
     if len(clean_series) < 10:
         clean_series = ticker_series
+
+    # Avoid zero/negative values when log scale is selected.
+    if axis_scale == "Log":
+        clean_series = clean_series[clean_series > 0]
+        ticker_series = ticker_series[ticker_series > 0]
+        if len(clean_series) < 15 or len(ticker_series) < 15:
+            continue
 
     p5 = clean_series.quantile(0.05)
     p25 = clean_series.quantile(0.25)
@@ -388,6 +407,10 @@ for ticker in ordered:
 
     valid_tickers.append(ticker)
 
+yaxis_config = dict(fixedrange=True)
+if axis_scale == "Log":
+    yaxis_config["type"] = "log"
+
 fig_distribution.update_layout(
     title=f"{metric_choice} distribution for {focus_label}",
     xaxis_title="Ticker / Aggregate",
@@ -400,7 +423,7 @@ fig_distribution.update_layout(
         rangeslider=dict(visible=False),
         fixedrange=True,
     ),
-    yaxis=dict(fixedrange=True),
+    yaxis=yaxis_config,
     dragmode=False,
 )
 
