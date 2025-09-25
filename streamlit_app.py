@@ -620,12 +620,6 @@ if summary_df.empty:
 else:
     table_df = summary_df.copy()
 
-    formatted_current = table_df["Current"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
-    formatted_mean = table_df["Mean"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
-    formatted_cdf = table_df["CDF (%)"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
-    formatted_z = table_df["Z-Score"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "N/A")
-
-    row_background = ["#E8E8E8" if flag else "white" for flag in table_df["IsAggregate"]]
     status_palette = {
         "Very Cheap": "#90EE90",
         "Cheap": "#B8E6B8",
@@ -633,48 +627,35 @@ else:
         "Expensive": "#FFD4A3",
         "Very Expensive": "#FFB3B3",
     }
-    status_colors = [status_palette.get(status, "white") for status in table_df["Status"]]
 
-    summary_fig = go.Figure(
-        data=[
-            go.Table(
-                header=dict(
-                    values=["Ticker", grouping_label, "Current", "Mean", "CDF (%)", "Z-Score", "Status"],
-                    fill_color="#478B81",
-                    font=dict(color="white", size=12),
-                    align="left",
-                    height=32,
-                ),
-                cells=dict(
-                    values=[
-                        table_df["Ticker"],
-                        table_df["Group"],
-                        formatted_current,
-                        formatted_mean,
-                        formatted_cdf,
-                        formatted_z,
-                        table_df["Status"],
-                    ],
-                    fill_color=[
-                        row_background,
-                        row_background,
-                        row_background,
-                        row_background,
-                        row_background,
-                        status_colors,
-                    ],
-                    align="left",
-                    height=26,
-                    font=dict(size=13),
-                ),
-                sort_action="native",
-                sort_mode="multi",
-            )
-        ]
+    display_columns = ["Ticker", "Group", "Current", "Mean", "CDF (%)", "Z-Score", "Status"]
+    display_df = table_df[display_columns].copy()
+
+    number_formats = {
+        "Current": "{:.2f}",
+        "Mean": "{:.2f}",
+        "CDF (%)": "{:.1f}",
+        "Z-Score": "{:.2f}",
+    }
+
+    def style_table(data: pd.DataFrame) -> pd.DataFrame:
+        styles = pd.DataFrame("", index=data.index, columns=data.columns)
+        for idx in data.index:
+            if table_df.loc[idx, "IsAggregate"]:
+                styles.loc[idx, :] = "background-color: #E8E8E8"
+            status_color = status_palette.get(data.loc[idx, "Status"], "")
+            if status_color:
+                styles.loc[idx, "Status"] = f"background-color: {status_color}"
+        return styles
+
+    styled_table = (
+        display_df.style
+        .format(number_formats, na_rep="N/A")
+        .apply(style_table, axis=None)
+        .hide(axis="index")
     )
 
-    summary_fig.update_layout(height=640, margin=dict(l=0, r=0, t=0, b=0))
-    st.plotly_chart(summary_fig, use_container_width=True)
+    st.dataframe(styled_table, use_container_width=True)
 
     st.markdown("---")
     col_under, col_fair, col_over = st.columns(3)
