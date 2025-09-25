@@ -49,30 +49,35 @@ def load_market_data(years: int = DEFAULT_LOOKBACK_YEARS) -> pd.DataFrame:
     return df
 
 
-def append_group_aggregate(
+def build_group_aggregates(
     df: pd.DataFrame,
     *,
     metric_cols: list[str],
-    label: str,
     group_col: str,
 ) -> pd.DataFrame:
-    """Append median aggregate rows for the chosen grouping."""
+    """Create median aggregates per grouping value across time."""
 
-    aggregate = df.groupby("TRADE_DATE")[metric_cols].median().reset_index()
+    if group_col not in df.columns:
+        return pd.DataFrame(columns=df.columns)
+
+    aggregate = (
+        df.groupby(["TRADE_DATE", group_col])[metric_cols]
+        .median()
+        .reset_index()
+    )
+
     if aggregate.empty:
-        return df
+        return aggregate
 
-    aggregate["TICKER"] = label
-    aggregate["GroupValue"] = label
-    aggregate[group_col] = label
+    aggregate["TICKER"] = aggregate[group_col]
+    aggregate["GroupValue"] = aggregate[group_col]
     aggregate["IsAggregate"] = True
 
     for col in df.columns:
         if col not in aggregate.columns:
             aggregate[col] = np.nan
 
-    combined = pd.concat([df, aggregate], ignore_index=True, sort=False)
-    return combined
+    return aggregate
 
 
 def prepare_summary_table(
@@ -80,6 +85,7 @@ def prepare_summary_table(
     *,
     metric_col: str,
     group_col: str,
+    top_ticker_set: set[str] | None,
 ) -> pd.DataFrame:
     """Create the summary statistics table for the selected cohort."""
 
@@ -99,6 +105,9 @@ def prepare_summary_table(
 
         group_value = ticker_df[group_col].iloc[0] if group_col in ticker_df.columns else "Unclassified"
         is_aggregate = bool(ticker_df.get("IsAggregate", pd.Series([False])).iloc[0])
+
+        if not is_aggregate and top_ticker_set is not None and ticker not in top_ticker_set:
+            continue
 
         rows.append(
             {
@@ -200,7 +209,7 @@ if filtered_df.empty:
 filtered_df = filtered_df.assign(IsAggregate=False)
 filtered_df["GroupValue"] = filtered_df[grouping_column]
 
-focus_label = selected_group if selected_group != "All Market" else "All Market"
+focus_label = "All Market" if selected_group == "All Market" else selected_group
 if selected_group != "All Market":
     filtered_df = filtered_df[filtered_df[grouping_column] == selected_group]
 
@@ -213,15 +222,33 @@ if metric_column not in metric_columns_present:
     st.error(f"Metric column '{metric_column}' not found in dataset.")
     st.stop()
 
-focus_df = append_group_aggregate(
+group_aggregates = build_group_aggregates(
     filtered_df,
     metric_cols=metric_columns_present,
-    label=focus_label,
     group_col=grouping_column,
+)
+
+if selected_group == "All Market":
+    dist_df = group_aggregates.copy()
+else:
+    dist_df = pd.concat(
+        [
+            group_aggregates[group_aggregates[grouping_column] == selected_group],
+            filtered_df,
+        ],
+        ignore_index=True,
+        sort=False,
+    )
+
+focus_df = pd.concat(
+    [filtered_df, group_aggregates],
+    ignore_index=True,
+    sort=False,
 )
 
 latest_date = focus_df["TRADE_DATE"].max()
 st.title("Market Valuation Explorer")
+label_suffix = grouping_label if selected_group == "All Market" else selected_group
 st.markdown("Full-universe valuation analytics with sector-level context and drilldowns.")
 st.caption(f"Latest trading day: {latest_date.strftime('%Y-%m-%d')}")
 
@@ -229,8 +256,12 @@ st.caption(f"Latest trading day: {latest_date.strftime('%Y-%m-%d')}")
 # Distribution view
 # ---------------------------------------------------------------------------
 
-latest_idx = focus_df.groupby("TICKER")["TRADE_DATE"].idxmax()
-latest_snapshot = focus_df.loc[latest_idx, ["TICKER", metric_column]].dropna(subset=[metric_column])
+if dist_df.empty:
+    st.info("No aggregates available for the selected view.")
+    st.stop()
+
+latest_idx = dist_df.groupby("TICKER")["TRADE_DATE"].idxmax()
+latest_snapshot = dist_df.loc[latest_idx, ["TICKER", metric_column]].dropna(subset=[metric_column])
 ordered = latest_snapshot.sort_values(metric_column, ascending=False)["TICKER"].tolist()
 
 if focus_label in ordered:
@@ -243,7 +274,7 @@ fig_distribution = go.Figure()
 valid_tickers: list[str] = []
 
 for ticker in ordered:
-    ticker_series = focus_df.loc[focus_df["TICKER"] == ticker, metric_column].dropna()
+    ticker_series = dist_df.loc[dist_df["TICKER"] == ticker, metric_column].dropna()
     if len(ticker_series) < 15:
         continue
 
@@ -324,15 +355,32 @@ st.caption("Analyse historical trends and distribution percentiles for a selecte
 
 col_ticker, col_range, _ = st.columns([2, 2, 6])
 
-available_tickers = sorted(focus_df["TICKER"].unique().tolist())
-default_index = available_tickers.index(focus_label) if focus_label in available_tickers else 0
+available_tickers = sorted(filtered_df["TICKER"].unique().tolist())
+aggregate_options = sorted(group_aggregates[grouping_column].dropna().unique().tolist())
 
 with col_ticker:
-    selected_ticker = st.selectbox(
-        "Ticker or Aggregate",
-        available_tickers,
-        index=default_index,
+    entity_choices = ["Ticker"] + ([grouping_label] if aggregate_options else [])
+    entity_type = st.radio(
+        "Entity Type",
+        entity_choices,
+        index=0,
+        horizontal=True,
     )
+
+    if entity_type == "Ticker":
+        default_index = available_tickers.index(focus_label) if focus_label in available_tickers else 0
+        selected_ticker = st.selectbox(
+            "Select Ticker",
+            available_tickers,
+            index=default_index if available_tickers else 0,
+        )
+    else:
+        default_index = aggregate_options.index(focus_label) if focus_label in aggregate_options else 0
+        selected_ticker = st.selectbox(
+            f"Select {grouping_label}",
+            aggregate_options,
+            index=default_index if aggregate_options else 0,
+        )
 
 with col_range:
     period_choice = st.selectbox(
@@ -494,7 +542,22 @@ with col_hist:
 
 st.markdown("---")
 st.subheader("Valuation Summary Table")
-summary_df = prepare_summary_table(focus_df, metric_col=metric_column, group_col=grouping_column)
+latest_caps = (
+    filtered_df.dropna(subset=["MKT_CAP"])
+    .sort_values(["TICKER", "TRADE_DATE"])
+    .groupby("TICKER")["MKT_CAP"]
+    .last()
+    .sort_values(ascending=False)
+)
+
+top_ticker_set = set(latest_caps.head(100).index) if not latest_caps.empty else set(filtered_df["TICKER"].unique())
+
+summary_df = prepare_summary_table(
+    focus_df,
+    metric_col=metric_column,
+    group_col=grouping_column,
+    top_ticker_set=top_ticker_set,
+)
 
 if summary_df.empty:
     st.info("Insufficient data to build the summary table.")
