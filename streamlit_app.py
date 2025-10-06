@@ -35,6 +35,7 @@ apply_sidebar_style()
 
 VALUATION_COLUMNS = ["PE", "PB", "PS", "EV_EBITDA"]
 DEFAULT_LOOKBACK_YEARS = 5
+BILLION = 1_000_000_000
 
 
 @st.cache_data(ttl=1800)
@@ -186,7 +187,7 @@ with st.sidebar:
     )
     metric_column = get_metric_column(metric_choice)
 
-    min_market_cap = st.number_input(
+    min_market_cap_bn = st.number_input(
         "Minimum market cap (bn)",
         min_value=0.0,
         value=4000.0,
@@ -194,7 +195,11 @@ with st.sidebar:
         help="All calculations will use tickers with market cap above this threshold.",
     )
 
-market_df = load_market_data(min_market_cap=min_market_cap)
+min_market_cap_value: float | None = None
+if min_market_cap_bn and min_market_cap_bn > 0:
+    min_market_cap_value = float(min_market_cap_bn * BILLION)
+
+market_df = load_market_data(min_market_cap=min_market_cap_value)
 
 if market_df.empty:
     st.error("Valuation data not available. Please refresh the data pipeline.")
@@ -245,7 +250,10 @@ if only_vn30 and "VNI_Flag" in filtered_df.columns:
     filtered_df = filtered_df[filtered_df["VNI_Flag"].str.upper() == "Y"]
 
 if "MKT_CAP" in filtered_df.columns:
-    filtered_df = filtered_df[filtered_df["MKT_CAP"].fillna(0) >= min_market_cap]
+    if min_market_cap_value is not None:
+        filtered_df = filtered_df[filtered_df["MKT_CAP"].fillna(0) >= min_market_cap_value]
+    else:
+        filtered_df = filtered_df[filtered_df["MKT_CAP"].notna()]
 else:
     st.warning("Market cap data unavailable; minimum threshold ignored.")
 
@@ -302,7 +310,7 @@ st.markdown("Full-universe valuation analytics with sector-level context and dri
 st.caption(f"Latest trading day: {latest_date.strftime('%Y-%m-%d')}")
 st.caption(
     f"Companies included in calculations: {included_company_count:,} "
-    f"(market cap ≥ {min_market_cap:,.0f} bn)"
+    f"(market cap ≥ {min_market_cap_bn:,.0f} bn)"
 )
 
 # ---------------------------------------------------------------------------
