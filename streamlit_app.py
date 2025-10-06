@@ -210,7 +210,7 @@ with st.sidebar:
     min_market_cap = st.number_input(
         "Minimum market cap (bn)",
         min_value=0.0,
-        value=1000.0,
+        value=2500.0,
         step=50.0,
         help="All calculations will use tickers with market cap above this threshold.",
     )
