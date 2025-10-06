@@ -332,6 +332,16 @@ if cap_source in filtered_df.columns:
             else:
                 st.caption("Debug: no tickers remain below the configured threshold.")
 
+        debug_preview = (
+            latest_caps[["TICKER", cap_source]]
+            .rename(columns={cap_source: "Market Cap (raw)"})
+            .sort_values("Market Cap (raw)")
+            .assign(**{"Market Cap (÷1,000)": lambda df_: df_["Market Cap (raw)"] / 1000})
+            .head(25)
+        )
+
+        st.dataframe(debug_preview, use_container_width=True)
+
 metric_columns_present = [col for col in VALUATION_COLUMNS if col in filtered_df.columns]
 if metric_column not in metric_columns_present:
     st.error(f"Metric column '{metric_column}' not found in dataset.")
