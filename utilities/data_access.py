@@ -120,67 +120,42 @@ def load_valuation_universe(
 
     params: list
 
-    if min_market_cap is not None:
-        query = """
-            SELECT md.TICKER,
-                   md.TRADE_DATE,
-                   md.PE,
-                   md.PB,
-                   md.PS,
-                   md.EV_EBITDA,
-                   md.MKT_CAP,
-                   sm.Sector,
-                   sm.L1,
-                   sm.L2,
-                   sm.L3,
-                   sm.VNI,
-                   mc.CUR_MKT_CAP
-            FROM dbo.Market_Data AS md
-            LEFT JOIN dbo.Sector_Map AS sm
-                ON md.TICKER = sm.Ticker
-            LEFT JOIN dbo.MarketCap AS mc
-                ON md.TICKER = mc.TICKER
-            WHERE md.TRADE_DATE >= %s
-              AND (md.PE IS NOT NULL
-                   OR md.PB IS NOT NULL
-                   OR md.PS IS NOT NULL
-                   OR md.EV_EBITDA IS NOT NULL)
-              AND md.TICKER IN (
-                  SELECT DISTINCT mc_inner.TICKER
-                  FROM dbo.MarketCap AS mc_inner
-                  WHERE COALESCE(mc_inner.CUR_MKT_CAP, 0) >= %s
-              )
-        """
-        params = [start_date, min_market_cap]
-    else:
-        query = """
-            SELECT md.TICKER,
-                   md.TRADE_DATE,
-                   md.PE,
-                   md.PB,
-                   md.PS,
-                   md.EV_EBITDA,
-                   md.MKT_CAP,
-                   sm.Sector,
-                   sm.L1,
-                   sm.L2,
-                   sm.L3,
-                   sm.VNI,
-                   mc.CUR_MKT_CAP
-            FROM dbo.Market_Data AS md
-            LEFT JOIN dbo.Sector_Map AS sm
-                ON md.TICKER = sm.Ticker
-            LEFT JOIN dbo.MarketCap AS mc
-                ON md.TICKER = mc.TICKER
-            WHERE md.TRADE_DATE >= %s
-              AND (md.PE IS NOT NULL
-                   OR md.PB IS NOT NULL
-                   OR md.PS IS NOT NULL
-                   OR md.EV_EBITDA IS NOT NULL)
-        """
-        params = [start_date]
+    query = """
+        SELECT md.TICKER,
+               md.TRADE_DATE,
+               md.PE,
+               md.PB,
+               md.PS,
+               md.EV_EBITDA,
+               md.MKT_CAP,
+               sm.Sector,
+               sm.L1,
+               sm.L2,
+               sm.L3,
+               sm.VNI,
+               latest.CUR_MKT_CAP
+        FROM dbo.Market_Data AS md
+        OUTER APPLY (
+            SELECT TOP 1 md2.MKT_CAP AS CUR_MKT_CAP
+            FROM dbo.Market_Data AS md2
+            WHERE md2.TICKER = md.TICKER
+              AND md2.MKT_CAP IS NOT NULL
+            ORDER BY md2.TRADE_DATE DESC
+        ) AS latest
+        LEFT JOIN dbo.Sector_Map AS sm
+            ON md.TICKER = sm.Ticker
+        WHERE md.TRADE_DATE >= %s
+          AND (md.PE IS NOT NULL
+               OR md.PB IS NOT NULL
+               OR md.PS IS NOT NULL
+               OR md.EV_EBITDA IS NOT NULL)
+    """
 
-    df = _load_dataframe(query, params=params)
+    params = [start_date]
+
+    if min_market_cap is not None:
+        query += "\n          AND COALESCE(latest.CUR_MKT_CAP, 0) >= %s"
+        params.append(min_market_cap)
 
     df = _load_dataframe(query, params=params)
     if df.empty:
