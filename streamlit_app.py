@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from datetime import timedelta
+import inspect
 
 from utilities.sidebar_style import apply_sidebar_style
 from utilities.style_utils import apply_google_font
@@ -35,6 +36,8 @@ apply_sidebar_style()
 
 VALUATION_COLUMNS = ["PE", "PB", "PS", "EV_EBITDA"]
 DEFAULT_LOOKBACK_YEARS = 5
+PLOTLY_SUPPORTS_WIDTH = "width" in inspect.signature(st.plotly_chart).parameters
+DATAFRAME_SUPPORTS_WIDTH = "width" in inspect.signature(st.dataframe).parameters
 
 
 def render_plotly_chart(fig: go.Figure, *, config: dict | None = None):
@@ -44,10 +47,9 @@ def render_plotly_chart(fig: go.Figure, *, config: dict | None = None):
     if config is not None:
         kwargs["config"] = config
 
-    try:
+    if PLOTLY_SUPPORTS_WIDTH:
         return st.plotly_chart(fig, width="stretch", **kwargs)
-    except TypeError:
-        return st.plotly_chart(fig, use_container_width=True, **kwargs)
+    return st.plotly_chart(fig, use_container_width=True, **kwargs)
 
 
 @st.cache_data(ttl=1800)
@@ -692,9 +694,9 @@ else:
         .hide(axis="index")
     )
 
-    try:
+    if DATAFRAME_SUPPORTS_WIDTH:
         st.dataframe(styled_table, width="stretch")
-    except TypeError:
+    else:
         st.dataframe(styled_table, use_container_width=True)
 
     st.markdown("---")

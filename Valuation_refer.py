@@ -4,6 +4,7 @@ Provides comprehensive valuation metrics analysis for Vietnamese banking sector
 """
 
 import streamlit as st
+import inspect
 
 # Page configuration
 st.set_page_config(
@@ -527,12 +528,14 @@ if not stats_df.empty:
         st.metric("Overvalued Banks", expensive_count)
 else:
     st.warning("Insufficient data to generate statistics table")
+PLOTLY_SUPPORTS_WIDTH = "width" in inspect.signature(st.plotly_chart).parameters
+
+
 def render_plotly_chart(fig, *, config=None):
     kwargs = {}
     if config is not None:
         kwargs["config"] = config
 
-    try:
-        return st.plotly_chart(fig, width="stretch", **kwargs)
-    except TypeError:
-        return st.plotly_chart(fig, use_container_width=True, **kwargs)
+    if PLOTLY_SUPPORTS_WIDTH:
+        return st.plotly_chart(fig, width='stretch', **kwargs)
+    return st.plotly_chart(fig, use_container_width=True, **kwargs)

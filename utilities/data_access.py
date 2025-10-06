@@ -118,45 +118,74 @@ def load_valuation_universe(
 
     start_date = (pd.Timestamp.today().normalize() - pd.DateOffset(years=years)).date()
 
-    base_query = """
-        WITH LatestMarketCap AS (
-            SELECT mc.TICKER,
-                   mc.CUR_MKT_CAP,
-                   ROW_NUMBER() OVER (PARTITION BY mc.TICKER ORDER BY mc.TRADE_DATE DESC) AS rn
-            FROM dbo.MarketCap AS mc
-        )
-        SELECT md.TICKER,
-               md.TRADE_DATE,
-               md.PE,
-               md.PB,
-               md.PS,
-               md.EV_EBITDA,
-               md.MKT_CAP,
-               sm.Sector,
-               sm.L1,
-               sm.L2,
-               sm.L3,
-               sm.VNI,
-               latest.CUR_MKT_CAP
-        FROM dbo.Market_Data AS md
-        LEFT JOIN dbo.Sector_Map AS sm
-            ON md.TICKER = sm.Ticker
-        LEFT JOIN LatestMarketCap AS latest
-            ON md.TICKER = latest.TICKER AND latest.rn = 1
-        WHERE md.TRADE_DATE >= %s
-          AND (md.PE IS NOT NULL
-               OR md.PB IS NOT NULL
-               OR md.PS IS NOT NULL
-               OR md.EV_EBITDA IS NOT NULL)
-    """
-
-    params: list = [start_date]
+    params: list
 
     if min_market_cap is not None:
-        base_query += "\n          AND COALESCE(latest.CUR_MKT_CAP, 0) >= %s"
-        params.append(min_market_cap)
+        query = """
+            ;WITH LatestCaps AS (
+                SELECT md.TICKER,
+                       MAX(md.TRADE_DATE) AS LatestDate
+                FROM dbo.Market_Data AS md
+                WHERE md.TRADE_DATE >= %s
+                GROUP BY md.TICKER
+            ),
+            EligibleTickers AS (
+                SELECT md.TICKER
+                FROM LatestCaps AS lc
+                INNER JOIN dbo.Market_Data AS md
+                    ON md.TICKER = lc.TICKER
+                   AND md.TRADE_DATE = lc.LatestDate
+                WHERE COALESCE(md.MKT_CAP, 0) >= %s
+            )
+            SELECT md.TICKER,
+                   md.TRADE_DATE,
+                   md.PE,
+                   md.PB,
+                   md.PS,
+                   md.EV_EBITDA,
+                   md.MKT_CAP,
+                   sm.Sector,
+                   sm.L1,
+                   sm.L2,
+                   sm.L3,
+                   sm.VNI
+            FROM dbo.Market_Data AS md
+            LEFT JOIN dbo.Sector_Map AS sm
+                ON md.TICKER = sm.Ticker
+            WHERE md.TRADE_DATE >= %s
+              AND (md.PE IS NOT NULL
+                   OR md.PB IS NOT NULL
+                   OR md.PS IS NOT NULL
+                   OR md.EV_EBITDA IS NOT NULL)
+              AND md.TICKER IN (SELECT TICKER FROM EligibleTickers)
+        """
+        params = [start_date, min_market_cap, start_date]
+    else:
+        query = """
+            SELECT md.TICKER,
+                   md.TRADE_DATE,
+                   md.PE,
+                   md.PB,
+                   md.PS,
+                   md.EV_EBITDA,
+                   md.MKT_CAP,
+                   sm.Sector,
+                   sm.L1,
+                   sm.L2,
+                   sm.L3,
+                   sm.VNI
+            FROM dbo.Market_Data AS md
+            LEFT JOIN dbo.Sector_Map AS sm
+                ON md.TICKER = sm.Ticker
+            WHERE md.TRADE_DATE >= %s
+              AND (md.PE IS NOT NULL
+                   OR md.PB IS NOT NULL
+                   OR md.PS IS NOT NULL
+                   OR md.EV_EBITDA IS NOT NULL)
+        """
+        params = [start_date]
 
-    df = _load_dataframe(base_query, params=params)
+    df = _load_dataframe(query, params=params)
 
     df = _load_dataframe(query, params=params)
     if df.empty:
@@ -172,7 +201,7 @@ def load_valuation_universe(
     }
     df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
 
-    for col in ['PE', 'PB', 'PS', 'EV_EBITDA', 'MKT_CAP', 'CUR_MKT_CAP']:
+    for col in ['PE', 'PB', 'PS', 'EV_EBITDA', 'MKT_CAP']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
