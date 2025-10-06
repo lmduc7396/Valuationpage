@@ -319,6 +319,17 @@ if cap_source in filtered_df.columns:
         latest_caps_bn = latest_caps[cap_source].min() / MARKET_CAP_BILLION_TO_DATA_SCALE
         median_caps_bn = latest_caps[cap_source].median() / MARKET_CAP_BILLION_TO_DATA_SCALE
 
+        if min_market_cap_value is not None:
+            debug_below = latest_caps[latest_caps[cap_source] < min_market_cap_value]
+            if not debug_below.empty:
+                st.warning(
+                    f"Debug: {len(debug_below)} tickers remain below the {min_market_cap_bn:,.0f} bn threshold."
+                )
+                st.dataframe(
+                    debug_below[["TICKER", cap_source]].rename(columns={cap_source: "Market Cap"}).head(25),
+                    use_container_width=True,
+                )
+
 metric_columns_present = [col for col in VALUATION_COLUMNS if col in filtered_df.columns]
 if metric_column not in metric_columns_present:
     st.error(f"Metric column '{metric_column}' not found in dataset.")
