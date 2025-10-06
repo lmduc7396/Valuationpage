@@ -230,7 +230,7 @@ fig_candle.update_layout(
     dragmode=False  # Disable all drag interactions
 )
 
-st.plotly_chart(fig_candle, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
+st.plotly_chart(fig_candle, width='stretch', config={'displayModeBar': False, 'staticPlot': False})
 
 # Combined Ticker Selection for Charts 2 and 3
 st.markdown("---")
@@ -349,7 +349,7 @@ with col_chart1:
                 )
             )
             
-            st.plotly_chart(fig_ts, use_container_width=True)
+            st.plotly_chart(fig_ts, width='stretch')
             
             # Show statistics below the chart
             col_stat1, col_stat2 = st.columns(2)
@@ -407,7 +407,7 @@ with col_chart2:
         )
         
         # Display histogram
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_hist, width='stretch')
         
         # Show distribution statistics below the histogram
         col_dist1, col_dist2 = st.columns(2)
@@ -508,7 +508,7 @@ if not stats_df.empty:
     )
     
     # Display the main table
-    st.plotly_chart(fig_table, use_container_width=True)
+    st.plotly_chart(fig_table, width='stretch')
     
     # Summary statistics
     st.markdown("---")

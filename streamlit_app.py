@@ -38,10 +38,14 @@ DEFAULT_LOOKBACK_YEARS = 5
 
 
 @st.cache_data(ttl=1800)
-def load_market_data(years: int = DEFAULT_LOOKBACK_YEARS) -> pd.DataFrame:
+def load_market_data(
+    years: int = DEFAULT_LOOKBACK_YEARS,
+    *,
+    min_market_cap: float | None = None,
+) -> pd.DataFrame:
     """Load and pre-process valuation data for the full ticker universe."""
 
-    df = load_valuation_universe(years=years)
+    df = load_valuation_universe(years=years, min_market_cap=min_market_cap)
     if df.empty:
         return df
 
@@ -173,7 +177,24 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-market_df = load_market_data()
+with st.sidebar:
+    st.markdown("### Settings")
+    metric_choice = st.selectbox(
+        "Valuation Metric",
+        ["P/B", "P/E", "P/S", "EV/EBITDA"],
+        index=0,
+    )
+    metric_column = get_metric_column(metric_choice)
+
+    min_market_cap = st.number_input(
+        "Minimum market cap (bn)",
+        min_value=0.0,
+        value=4000.0,
+        step=50.0,
+        help="All calculations will use tickers with market cap above this threshold.",
+    )
+
+market_df = load_market_data(min_market_cap=min_market_cap)
 
 if market_df.empty:
     st.error("Valuation data not available. Please refresh the data pipeline.")
@@ -190,14 +211,6 @@ else:
     grouping_label = "Sector"
 
 with st.sidebar:
-    st.markdown("### Settings")
-    metric_choice = st.selectbox(
-        "Valuation Metric",
-        ["P/B", "P/E", "P/S", "EV/EBITDA"],
-        index=0,
-    )
-    metric_column = get_metric_column(metric_choice)
-
     available_groups = ["All Market"] + sorted(
         g for g in market_df[grouping_column].dropna().unique().tolist() if g
     )
@@ -206,14 +219,6 @@ with st.sidebar:
         available_groups,
     )
     st.caption(f"Grouping fixed at {grouping_label} for performance.")
-
-    min_market_cap = st.number_input(
-        "Minimum market cap (bn)",
-        min_value=0.0,
-        value=2500.0,
-        step=50.0,
-        help="All calculations will use tickers with market cap above this threshold.",
-    )
 
     only_vn30 = st.checkbox("Only VN30 constituents", value=False)
     max_entities = st.slider(
@@ -407,7 +412,7 @@ fig_distribution.update_layout(
     dragmode=False,
 )
 
-st.plotly_chart(fig_distribution, use_container_width=True, config={"displayModeBar": False})
+st.plotly_chart(fig_distribution, width="stretch", config={"displayModeBar": False})
 
 # ---------------------------------------------------------------------------
 # Drilldown charts
@@ -534,7 +539,7 @@ with col_trend:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             )
 
-            st.plotly_chart(fig_trend, use_container_width=True)
+            st.plotly_chart(fig_trend, width="stretch")
 
             stat_left, stat_right = st.columns(2)
             with stat_left:
@@ -590,7 +595,7 @@ with col_hist:
             hovermode="x",
         )
 
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_hist, width="stretch")
 
         dist_left, dist_right = st.columns(2)
         with dist_left:
@@ -654,7 +659,7 @@ else:
         .hide(axis="index")
     )
 
-    st.dataframe(styled_table, use_container_width=True)
+    st.dataframe(styled_table, width="stretch")
 
     st.markdown("---")
     col_under, col_fair, col_over = st.columns(3)

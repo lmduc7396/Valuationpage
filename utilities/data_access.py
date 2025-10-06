@@ -97,11 +97,16 @@ def load_valuation_banking() -> pd.DataFrame:
     return df
 
 
-def load_valuation_universe(years: int = 5) -> pd.DataFrame:
+def load_valuation_universe(
+    years: int = 5,
+    *,
+    min_market_cap: float | None = None,
+) -> pd.DataFrame:
     """Load valuation metrics for all tickers with sector metadata.
 
     Args:
         years: Number of trailing years to include (default 5).
+        min_market_cap: Optional minimum market cap threshold (same units as source data).
 
     Returns:
         DataFrame with valuation ratios and Sector_Map classifications.
@@ -135,7 +140,12 @@ def load_valuation_universe(years: int = 5) -> pd.DataFrame:
                OR md.EV_EBITDA IS NOT NULL)
     """
 
-    df = _load_dataframe(query, params=[start_date])
+    params: list = [start_date]
+    if min_market_cap is not None:
+        query += "\n          AND md.MKT_CAP >= %s"
+        params.append(min_market_cap)
+
+    df = _load_dataframe(query, params=params)
     if df.empty:
         return df
 
