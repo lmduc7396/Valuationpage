@@ -106,7 +106,8 @@ def load_valuation_universe(
 
     Args:
         years: Number of trailing years to include (default 5).
-        min_market_cap: Optional minimum market cap threshold (same units as source data).
+        min_market_cap: Optional minimum market cap threshold in billions of VND (matching
+            `Market_Data.MKT_CAP`).
 
     Returns:
         DataFrame with valuation ratios and Sector_Map classifications.

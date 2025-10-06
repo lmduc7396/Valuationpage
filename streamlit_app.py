@@ -35,7 +35,6 @@ apply_sidebar_style()
 
 VALUATION_COLUMNS = ["PE", "PB", "PS", "EV_EBITDA"]
 DEFAULT_LOOKBACK_YEARS = 5
-BILLION = 1_000_000_000
 
 
 @st.cache_data(ttl=1800)
@@ -197,12 +196,17 @@ with st.sidebar:
 
 min_market_cap_value: float | None = None
 if min_market_cap_bn and min_market_cap_bn > 0:
-    min_market_cap_value = float(min_market_cap_bn * BILLION)
+    min_market_cap_value = float(min_market_cap_bn)
 
 market_df = load_market_data(min_market_cap=min_market_cap_value)
 
 if market_df.empty:
-    st.error("Valuation data not available. Please refresh the data pipeline.")
+    threshold_msg = (
+        f"No tickers meet the current market cap floor of {min_market_cap_bn:,.0f} bn."
+        if min_market_cap_value is not None
+        else "Valuation data not available."
+    )
+    st.error(f"{threshold_msg} Please adjust the settings or refresh the data pipeline.")
     st.stop()
 
 if "Industry_L2" in market_df.columns:
