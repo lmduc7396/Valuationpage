@@ -67,6 +67,12 @@ def load_market_data(
         return df
 
     df = df.sort_values(["TICKER", "TRADE_DATE"]).reset_index(drop=True)
+
+    if min_market_cap is not None and "MKT_CAP" in df.columns:
+        latest_caps = df.groupby("TICKER").tail(1)
+        eligible_tickers = latest_caps[latest_caps["MKT_CAP"] >= min_market_cap]["TICKER"].unique()
+        df = df[df["TICKER"].isin(eligible_tickers)]
+
     return df
 
 
@@ -271,10 +277,7 @@ if only_vn30 and "VNI_Flag" in filtered_df.columns:
     filtered_df = filtered_df[filtered_df["VNI_Flag"].str.upper() == "Y"]
 
 if "MKT_CAP" in filtered_df.columns:
-    if min_market_cap_value is not None:
-        filtered_df = filtered_df[filtered_df["MKT_CAP"].fillna(0) >= min_market_cap_value]
-    else:
-        filtered_df = filtered_df[filtered_df["MKT_CAP"].notna()]
+    filtered_df = filtered_df[filtered_df["MKT_CAP"].notna()]
 else:
     st.warning("Market cap data unavailable; minimum threshold ignored.")
 

@@ -118,33 +118,72 @@ def load_valuation_universe(
 
     start_date = (pd.Timestamp.today().normalize() - pd.DateOffset(years=years)).date()
 
-    query = """
-        SELECT md.TICKER,
-               md.TRADE_DATE,
-               md.PE,
-               md.PB,
-               md.PS,
-               md.EV_EBITDA,
-               md.MKT_CAP,
-               sm.Sector,
-               sm.L1,
-               sm.L2,
-               sm.L3,
-               sm.VNI
-        FROM dbo.Market_Data AS md
-        LEFT JOIN dbo.Sector_Map AS sm
-            ON md.TICKER = sm.Ticker
-        WHERE md.TRADE_DATE >= %s
-          AND (md.PE IS NOT NULL
-               OR md.PB IS NOT NULL
-               OR md.PS IS NOT NULL
-               OR md.EV_EBITDA IS NOT NULL)
-    """
+    params: list
 
-    params: list = [start_date]
     if min_market_cap is not None:
-        query += "\n          AND md.MKT_CAP >= %s"
-        params.append(min_market_cap)
+        query = """
+            WITH EligibleTickers AS (
+                SELECT ranked.TICKER
+                FROM (
+                    SELECT md.TICKER,
+                           md.MKT_CAP,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY md.TICKER
+                               ORDER BY md.TRADE_DATE DESC
+                           ) AS rn
+                    FROM dbo.Market_Data AS md
+                    WHERE md.TRADE_DATE >= %s
+                ) AS ranked
+                WHERE ranked.rn = 1
+                  AND ranked.MKT_CAP >= %s
+            )
+            SELECT md.TICKER,
+                   md.TRADE_DATE,
+                   md.PE,
+                   md.PB,
+                   md.PS,
+                   md.EV_EBITDA,
+                   md.MKT_CAP,
+                   sm.Sector,
+                   sm.L1,
+                   sm.L2,
+                   sm.L3,
+                   sm.VNI
+            FROM dbo.Market_Data AS md
+            LEFT JOIN dbo.Sector_Map AS sm
+                ON md.TICKER = sm.Ticker
+            WHERE md.TRADE_DATE >= %s
+              AND (md.PE IS NOT NULL
+                   OR md.PB IS NOT NULL
+                   OR md.PS IS NOT NULL
+                   OR md.EV_EBITDA IS NOT NULL)
+              AND md.TICKER IN (SELECT TICKER FROM EligibleTickers)
+        """
+        params = [start_date, min_market_cap, start_date]
+    else:
+        query = """
+            SELECT md.TICKER,
+                   md.TRADE_DATE,
+                   md.PE,
+                   md.PB,
+                   md.PS,
+                   md.EV_EBITDA,
+                   md.MKT_CAP,
+                   sm.Sector,
+                   sm.L1,
+                   sm.L2,
+                   sm.L3,
+                   sm.VNI
+            FROM dbo.Market_Data AS md
+            LEFT JOIN dbo.Sector_Map AS sm
+                ON md.TICKER = sm.Ticker
+            WHERE md.TRADE_DATE >= %s
+              AND (md.PE IS NOT NULL
+                   OR md.PB IS NOT NULL
+                   OR md.PS IS NOT NULL
+                   OR md.EV_EBITDA IS NOT NULL)
+        """
+        params = [start_date]
 
     df = _load_dataframe(query, params=params)
     if df.empty:
