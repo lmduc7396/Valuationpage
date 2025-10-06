@@ -329,6 +329,8 @@ if cap_source in filtered_df.columns:
                     debug_below[["TICKER", cap_source]].rename(columns={cap_source: "Market Cap"}).head(25),
                     use_container_width=True,
                 )
+            else:
+                st.caption("Debug: no tickers remain below the configured threshold.")
 
 metric_columns_present = [col for col in VALUATION_COLUMNS if col in filtered_df.columns]
 if metric_column not in metric_columns_present:
