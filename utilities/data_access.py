@@ -157,6 +157,10 @@ def load_valuation_universe(
         query += "\n          AND COALESCE(latest.CUR_MKT_CAP, 0) >= %s"
         params.append(min_market_cap)
 
+    print("[DEBUG] load_valuation_universe SQL:")
+    print(query)
+    print("[DEBUG] Parameters:", params)
+
     df = _load_dataframe(query, params=params)
     if df.empty:
         return df
