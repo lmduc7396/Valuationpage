@@ -36,8 +36,7 @@ apply_sidebar_style()
 
 VALUATION_COLUMNS = ["PE", "PB", "PS", "EV_EBITDA"]
 DEFAULT_LOOKBACK_YEARS = 5
-# Dataset stores market cap in millions of VND; convert from billions input.
-MARKET_CAP_BILLION_TO_DATA_SCALE = 1_000
+MARKET_CAP_BILLION_TO_DATA_SCALE = 1
 PLOTLY_SUPPORTS_WIDTH = "width" in inspect.signature(st.plotly_chart).parameters
 DATAFRAME_SUPPORTS_WIDTH = "width" in inspect.signature(st.dataframe).parameters
 
