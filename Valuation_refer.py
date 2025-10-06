@@ -4,6 +4,7 @@ Provides comprehensive valuation metrics analysis for Vietnamese banking sector
 """
 
 import streamlit as st
+import inspect
 
 # Page configuration
 st.set_page_config(
@@ -230,7 +231,7 @@ fig_candle.update_layout(
     dragmode=False  # Disable all drag interactions
 )
 
-st.plotly_chart(fig_candle, width='stretch', config={'displayModeBar': False, 'staticPlot': False})
+render_plotly_chart(fig_candle, config={'displayModeBar': False, 'staticPlot': False})
 
 # Combined Ticker Selection for Charts 2 and 3
 st.markdown("---")
@@ -349,7 +350,7 @@ with col_chart1:
                 )
             )
             
-            st.plotly_chart(fig_ts, width='stretch')
+            render_plotly_chart(fig_ts)
             
             # Show statistics below the chart
             col_stat1, col_stat2 = st.columns(2)
@@ -407,7 +408,7 @@ with col_chart2:
         )
         
         # Display histogram
-        st.plotly_chart(fig_hist, width='stretch')
+        render_plotly_chart(fig_hist)
         
         # Show distribution statistics below the histogram
         col_dist1, col_dist2 = st.columns(2)
@@ -508,7 +509,7 @@ if not stats_df.empty:
     )
     
     # Display the main table
-    st.plotly_chart(fig_table, width='stretch')
+    render_plotly_chart(fig_table)
     
     # Summary statistics
     st.markdown("---")
@@ -527,3 +528,17 @@ if not stats_df.empty:
         st.metric("Overvalued Banks", expensive_count)
 else:
     st.warning("Insufficient data to generate statistics table")
+PLOTLY_SUPPORTS_WIDTH = "width" in inspect.signature(st.plotly_chart).parameters
+
+
+def render_plotly_chart(fig, *, config=None):
+    chart_kwargs = {}
+    if PLOTLY_SUPPORTS_WIDTH:
+        chart_kwargs["width"] = "stretch"
+    else:
+        chart_kwargs["use_container_width"] = True
+
+    if config is not None:
+        chart_kwargs["config"] = config
+
+    return st.plotly_chart(fig, **chart_kwargs)

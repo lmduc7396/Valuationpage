@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from datetime import timedelta
+import inspect
 
 from utilities.sidebar_style import apply_sidebar_style
 from utilities.style_utils import apply_google_font
@@ -35,6 +36,22 @@ apply_sidebar_style()
 
 VALUATION_COLUMNS = ["PE", "PB", "PS", "EV_EBITDA"]
 DEFAULT_LOOKBACK_YEARS = 5
+PLOTLY_SUPPORTS_WIDTH = "width" in inspect.signature(st.plotly_chart).parameters
+
+
+def render_plotly_chart(fig: go.Figure, *, config: dict | None = None):
+    """Render Plotly charts with forward/backward compatibility for sizing."""
+
+    chart_kwargs: dict = {}
+    if PLOTLY_SUPPORTS_WIDTH:
+        chart_kwargs["width"] = "stretch"
+    else:
+        chart_kwargs["use_container_width"] = True
+
+    if config is not None:
+        chart_kwargs["config"] = config
+
+    return st.plotly_chart(fig, **chart_kwargs)
 
 
 @st.cache_data(ttl=1800)
@@ -424,7 +441,7 @@ fig_distribution.update_layout(
     dragmode=False,
 )
 
-st.plotly_chart(fig_distribution, width="stretch", config={"displayModeBar": False})
+render_plotly_chart(fig_distribution, config={"displayModeBar": False})
 
 # ---------------------------------------------------------------------------
 # Drilldown charts
@@ -551,7 +568,7 @@ with col_trend:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             )
 
-            st.plotly_chart(fig_trend, width="stretch")
+            render_plotly_chart(fig_trend)
 
             stat_left, stat_right = st.columns(2)
             with stat_left:
@@ -607,7 +624,7 @@ with col_hist:
             hovermode="x",
         )
 
-        st.plotly_chart(fig_hist, width="stretch")
+        render_plotly_chart(fig_hist)
 
         dist_left, dist_right = st.columns(2)
         with dist_left:
@@ -671,7 +688,7 @@ else:
         .hide(axis="index")
     )
 
-    st.dataframe(styled_table, width="stretch")
+    st.dataframe(styled_table, use_container_width=True)
 
     st.markdown("---")
     col_under, col_fair, col_over = st.columns(3)
