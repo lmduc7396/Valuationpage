@@ -7,7 +7,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from datetime import timedelta
-import inspect
 
 from utilities.sidebar_style import apply_sidebar_style
 from utilities.style_utils import apply_google_font
@@ -36,22 +35,19 @@ apply_sidebar_style()
 
 VALUATION_COLUMNS = ["PE", "PB", "PS", "EV_EBITDA"]
 DEFAULT_LOOKBACK_YEARS = 5
-PLOTLY_SUPPORTS_WIDTH = "width" in inspect.signature(st.plotly_chart).parameters
 
 
 def render_plotly_chart(fig: go.Figure, *, config: dict | None = None):
     """Render Plotly charts with forward/backward compatibility for sizing."""
 
-    chart_kwargs: dict = {}
-    if PLOTLY_SUPPORTS_WIDTH:
-        chart_kwargs["width"] = "stretch"
-    else:
-        chart_kwargs["use_container_width"] = True
-
+    kwargs: dict = {}
     if config is not None:
-        chart_kwargs["config"] = config
+        kwargs["config"] = config
 
-    return st.plotly_chart(fig, **chart_kwargs)
+    try:
+        return st.plotly_chart(fig, width="stretch", **kwargs)
+    except TypeError:
+        return st.plotly_chart(fig, use_container_width=True, **kwargs)
 
 
 @st.cache_data(ttl=1800)
@@ -691,7 +687,10 @@ else:
         .hide(axis="index")
     )
 
-    st.dataframe(styled_table, use_container_width=True)
+    try:
+        st.dataframe(styled_table, width="stretch")
+    except TypeError:
+        st.dataframe(styled_table, use_container_width=True)
 
     st.markdown("---")
     col_under, col_fair, col_over = st.columns(3)
