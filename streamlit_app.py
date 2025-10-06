@@ -64,9 +64,14 @@ def load_market_data(
 
     df = df.sort_values(["TICKER", "TRADE_DATE"]).reset_index(drop=True)
 
-    if min_market_cap is not None and "MKT_CAP" in df.columns:
+    if min_market_cap is not None:
         latest_caps = df.groupby("TICKER").tail(1)
-        eligible_tickers = latest_caps[latest_caps["MKT_CAP"] >= min_market_cap]["TICKER"].unique()
+
+        cap_source = "CUR_MKT_CAP" if "CUR_MKT_CAP" in latest_caps.columns else "MKT_CAP"
+        if cap_source not in latest_caps.columns:
+            return df
+
+        eligible_tickers = latest_caps[latest_caps[cap_source] >= min_market_cap]["TICKER"].unique()
         df = df[df["TICKER"].isin(eligible_tickers)]
 
     return df
