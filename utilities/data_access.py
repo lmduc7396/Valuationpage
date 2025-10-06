@@ -122,20 +122,19 @@ def load_valuation_universe(
 
     if min_market_cap is not None:
         query = """
-            ;WITH LatestCaps AS (
-                SELECT md.TICKER,
-                       MAX(md.TRADE_DATE) AS LatestDate
-                FROM dbo.Market_Data AS md
-                WHERE md.TRADE_DATE >= %s
-                GROUP BY md.TICKER
+            WITH LatestMarketCap AS (
+                SELECT mc.TICKER,
+                       mc.CUR_MKT_CAP,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY mc.TICKER
+                           ORDER BY mc.TRADE_DATE DESC
+                       ) AS rn
+                FROM dbo.MarketCap AS mc
             ),
             EligibleTickers AS (
-                SELECT md.TICKER
-                FROM LatestCaps AS lc
-                INNER JOIN dbo.Market_Data AS md
-                    ON md.TICKER = lc.TICKER
-                   AND md.TRADE_DATE = lc.LatestDate
-                WHERE COALESCE(md.MKT_CAP, 0) >= %s
+                SELECT TICKER
+                FROM LatestMarketCap
+                WHERE rn = 1 AND COALESCE(CUR_MKT_CAP, 0) >= %s
             )
             SELECT md.TICKER,
                    md.TRADE_DATE,
@@ -148,10 +147,13 @@ def load_valuation_universe(
                    sm.L1,
                    sm.L2,
                    sm.L3,
-                   sm.VNI
+                   sm.VNI,
+                   latest.CUR_MKT_CAP
             FROM dbo.Market_Data AS md
             LEFT JOIN dbo.Sector_Map AS sm
                 ON md.TICKER = sm.Ticker
+            LEFT JOIN LatestMarketCap AS latest
+                ON md.TICKER = latest.TICKER AND latest.rn = 1
             WHERE md.TRADE_DATE >= %s
               AND (md.PE IS NOT NULL
                    OR md.PB IS NOT NULL
@@ -159,9 +161,18 @@ def load_valuation_universe(
                    OR md.EV_EBITDA IS NOT NULL)
               AND md.TICKER IN (SELECT TICKER FROM EligibleTickers)
         """
-        params = [start_date, min_market_cap, start_date]
+        params = [min_market_cap, start_date]
     else:
         query = """
+            WITH LatestMarketCap AS (
+                SELECT mc.TICKER,
+                       mc.CUR_MKT_CAP,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY mc.TICKER
+                           ORDER BY mc.TRADE_DATE DESC
+                       ) AS rn
+                FROM dbo.MarketCap AS mc
+            )
             SELECT md.TICKER,
                    md.TRADE_DATE,
                    md.PE,
@@ -173,10 +184,13 @@ def load_valuation_universe(
                    sm.L1,
                    sm.L2,
                    sm.L3,
-                   sm.VNI
+                   sm.VNI,
+                   latest.CUR_MKT_CAP
             FROM dbo.Market_Data AS md
             LEFT JOIN dbo.Sector_Map AS sm
                 ON md.TICKER = sm.Ticker
+            LEFT JOIN LatestMarketCap AS latest
+                ON md.TICKER = latest.TICKER AND latest.rn = 1
             WHERE md.TRADE_DATE >= %s
               AND (md.PE IS NOT NULL
                    OR md.PB IS NOT NULL

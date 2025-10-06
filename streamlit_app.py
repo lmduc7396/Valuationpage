@@ -36,6 +36,8 @@ apply_sidebar_style()
 
 VALUATION_COLUMNS = ["PE", "PB", "PS", "EV_EBITDA"]
 DEFAULT_LOOKBACK_YEARS = 5
+# Dataset stores market cap in millions of VND; convert from billions input.
+MARKET_CAP_BILLION_TO_DATA_SCALE = 1_000
 PLOTLY_SUPPORTS_WIDTH = "width" in inspect.signature(st.plotly_chart).parameters
 DATAFRAME_SUPPORTS_WIDTH = "width" in inspect.signature(st.dataframe).parameters
 
@@ -222,7 +224,7 @@ with st.sidebar:
 
 min_market_cap_value: float | None = None
 if min_market_cap_bn and min_market_cap_bn > 0:
-    min_market_cap_value = float(min_market_cap_bn)
+    min_market_cap_value = float(min_market_cap_bn * MARKET_CAP_BILLION_TO_DATA_SCALE)
 
 market_df = load_market_data(min_market_cap=min_market_cap_value)
 
@@ -301,6 +303,23 @@ if filtered_df.empty:
 
 included_company_count = filtered_df["TICKER"].nunique()
 
+cap_source = "CUR_MKT_CAP" if "CUR_MKT_CAP" in filtered_df.columns else "MKT_CAP"
+latest_caps_bn: float | None = None
+median_caps_bn: float | None = None
+
+if cap_source in filtered_df.columns:
+    latest_caps = (
+        filtered_df[["TICKER", "TRADE_DATE", cap_source]]
+        .dropna(subset=[cap_source])
+        .sort_values("TRADE_DATE")
+        .groupby("TICKER")
+        .tail(1)
+    )
+
+    if not latest_caps.empty:
+        latest_caps_bn = latest_caps[cap_source].min() / MARKET_CAP_BILLION_TO_DATA_SCALE
+        median_caps_bn = latest_caps[cap_source].median() / MARKET_CAP_BILLION_TO_DATA_SCALE
+
 metric_columns_present = [col for col in VALUATION_COLUMNS if col in filtered_df.columns]
 if metric_column not in metric_columns_present:
     st.error(f"Metric column '{metric_column}' not found in dataset.")
@@ -339,6 +358,11 @@ st.caption(
     f"Companies included in calculations: {included_company_count:,} "
     f"(market cap ≥ {min_market_cap_bn:,.0f} bn)"
 )
+if latest_caps_bn is not None:
+    st.caption(
+        f"Smallest eligible market cap: {latest_caps_bn:,.1f} bn | "
+        f"Median eligible market cap: {median_caps_bn:,.1f} bn"
+    )
 
 # ---------------------------------------------------------------------------
 # Distribution view
